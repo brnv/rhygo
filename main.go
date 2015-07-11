@@ -1,11 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/docopt/docopt-go"
+	"github.com/moriyoshi/pulsego/src/github.com/moriyoshi/pulsego"
 	"github.com/op/go-logging"
 )
 
@@ -34,25 +37,82 @@ func main() {
 	)
 
 	timeoutInt, _ := strconv.Atoi(timeout)
-
 	if timeoutInt != 0 {
 		go exitOnTimeout(timeoutInt)
 	}
 
-	tempoInt, _ := strconv.Atoi(tempo)
-	runMetronome(tempoInt)
+	tempoFloat, _ := strconv.ParseFloat(tempo, 64)
+	runMetronome(tempoFloat)
 }
 
-func runMetronome(tempo int) {
-	for {
-		//@TODO:we need sound here
-		log.Notice("%v", "tick")
+func runMetronome(tempo float64) {
+	pulseAudio, pulseAudioContext := initPulseAudio()
+	defer pulseAudio.Dispose()
+	defer pulseAudioContext.Dispose()
 
-		time.Sleep(time.Second / (time.Duration(tempo) / 60))
+	for {
+		performTickSound(pulseAudioContext)
+
+		sleepDuration, _ := time.ParseDuration(fmt.Sprintf(
+			"%fs", 60/tempo,
+		))
+		time.Sleep(sleepDuration)
 	}
 }
 
 func exitOnTimeout(timeout int) {
 	time.Sleep(time.Second * time.Duration(timeout))
 	os.Exit(0)
+}
+
+func performTickSound(context *pulsego.PulseContext) {
+	stream := context.NewStream(
+		"default",
+		&pulsego.PulseSampleSpec{
+			// SAMPLE_S16LE works fine with int8 samples
+			// 48000 is specific value
+			Format: pulsego.SAMPLE_S16LE, Rate: 48000, Channels: 1,
+		},
+	)
+
+	if stream == nil {
+		log.Fatal("Failed to create pulseaudio stream")
+	}
+	defer stream.Dispose()
+	stream.ConnectToSink()
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		count := 0
+		for {
+			// magic comes here
+			stream.Write(tickWeakSample, pulsego.SEEK_RELATIVE)
+			// i dunno why
+			count++
+			if count == 200 { // same with 200
+				break
+			}
+		}
+		wg.Done()
+	}()
+
+	wg.Wait()
+}
+
+func initPulseAudio() (*pulsego.PulseMainLoop, *pulsego.PulseContext) {
+	pulseaudio := pulsego.NewPulseMainLoop()
+	if pulseaudio == nil {
+		log.Fatal("Failed to create pulseaudio main loop")
+	}
+
+	pulseaudio.Start()
+
+	context := pulseaudio.NewContext("default", 0)
+	if context == nil {
+		log.Fatal("Failed to create pulseaudio context")
+	}
+
+	return pulseaudio, context
 }
