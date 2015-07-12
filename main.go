@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/docopt/docopt-go"
@@ -51,7 +50,7 @@ func runMetronome(tempo float64) {
 	defer pulseAudioContext.Dispose()
 
 	for {
-		performTickSound(pulseAudioContext)
+		go performTickSound(pulseAudioContext)
 
 		sleepDuration, _ := time.ParseDuration(fmt.Sprintf(
 			"%fs", 60/tempo,
@@ -81,24 +80,15 @@ func performTickSound(context *pulsego.PulseContext) {
 	defer stream.Dispose()
 	stream.ConnectToSink()
 
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
+	count := 0
+	for {
+		stream.Write(tickWeakSample, pulsego.SEEK_RELATIVE)
 
-	go func() {
-		count := 0
-		for {
-			// magic comes here
-			stream.Write(tickWeakSample, pulsego.SEEK_RELATIVE)
-			// i dunno why
-			count++
-			if count == 200 { // same with 200
-				break
-			}
+		count++
+		if count == 200 {
+			break
 		}
-		wg.Done()
-	}()
-
-	wg.Wait()
+	}
 }
 
 func initPulseAudio() (*pulsego.PulseMainLoop, *pulsego.PulseContext) {
