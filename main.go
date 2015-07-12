@@ -15,7 +15,7 @@ var log = logging.MustGetLogger("")
 
 const usage = `Rhygo,
 
-Bla-bla-bla...
+simple metronome with good clicking sound and timeout feature.
 
 Usage:
     rhygo [-t <tempo>] [-o <timeout>]
